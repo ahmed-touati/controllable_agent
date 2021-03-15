@@ -14,7 +14,6 @@ def get_args():
     parser.add_argument('--w-sampling', type=str, default='cauchy_ball', help='[uniform_ball, goal_oriented]')
     parser.add_argument('--embed-dim', type=int, default=500, help='embedding dimension')
     parser.add_argument('--reg-coef', type=float, default=1.0, help='backward regularization coefficient')
-    parser.add_argument('--env-name', type=str, default='FetchReach-v1', help='the environment name')
     parser.add_argument('--n-epochs', type=int, default=200, help='the number of epochs to train the agent')
     parser.add_argument('--n-cycles', type=int, default=5, help='the times to collect samples per epoch')
     parser.add_argument('--n-batches', type=int, default=40, help='the times to update the network')
