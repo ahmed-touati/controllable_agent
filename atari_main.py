@@ -7,10 +7,6 @@ from atari_modules.wrappers import make_goalPacman
 import random
 import torch
 
-"""
-train the agent, the MPI part code is copy from openai baselines(https://github.com/openai/baselines/blob/master/baselines/her)
-
-"""
 
 
 def get_env_params(env):
