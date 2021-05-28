@@ -8,6 +8,7 @@ import csv
 from discrete_action_robots_modules.replay_buffer import replay_buffer
 from discrete_action_robots_modules.models import ForwardMap, BackwardMap
 from her_modules.her import her_sampler
+from mpi_utils.normalizer import normalizer
 from discrete_action_robots_modules.robots import goal_distance
 from grid_modules.mdp_utils import extract_policy
 from torch.distributions.cauchy import Cauchy
@@ -48,6 +49,9 @@ class FBAgent:
         self.her_module = her_sampler(self.args.replay_strategy, self.args.replay_k, self.env.compute_reward)
         # create the replay buffer
         self.buffer = replay_buffer(self.env_params, self.args.buffer_size, self.her_module.sample_her_transitions)
+
+        self.o_norm = normalizer(size=env_params['obs'], default_clip_range=self.args.clip_range)
+        self.g_norm = normalizer(size=env_params['goal'], default_clip_range=self.args.clip_range)
 
         if args.save_dir is not None:
             # create the dict for store the model
@@ -122,6 +126,8 @@ class FBAgent:
                 mb_actions = np.array(mb_actions)
                 # store the episodes
                 self.buffer.store_episode([mb_obs, mb_ag, mb_g, mb_actions])
+                # update normalizer statistics
+                self._update_normalizer([mb_obs, mb_ag, mb_g, mb_actions])
                 for _ in range(self.args.n_batches):
                     # train the network
                     self._update_network()
@@ -160,18 +166,46 @@ class FBAgent:
 
     # pre_process the inputs
     def _preproc_o(self, obs):
-        obs = self._clip(obs)
-        obs_tensor = torch.tensor(obs, dtype=torch.float32).unsqueeze(0)
+        # obs = self._clip(obs)
+        obs_norm = self.o_norm.normalize(obs)
+        obs_tensor = torch.tensor(obs_norm, dtype=torch.float32).unsqueeze(0)
         if self.args.cuda:
             obs_tensor = obs_tensor.cuda()
         return obs_tensor
 
     def _preproc_g(self, g):
-        g = self._clip(g)
-        g_tensor = torch.tensor(g, dtype=torch.float32).unsqueeze(0)
+        # g = self._clip(g)
+        g_norm = self.g_norm.normalize(g)
+        g_tensor = torch.tensor(g_norm, dtype=torch.float32).unsqueeze(0)
         if self.args.cuda:
             g_tensor = g_tensor.cuda()
         return g_tensor
+
+    # update the normalizer
+    def _update_normalizer(self, episode_batch):
+        mb_obs, mb_ag, mb_g, mb_actions = episode_batch
+        mb_obs_next = mb_obs[:, 1:, :]
+        mb_ag_next = mb_ag[:, 1:, :]
+        # get the number of normalization transitions
+        num_transitions = mb_actions.shape[1]
+        # create the new buffer to store them
+        buffer_temp = {'obs': mb_obs,
+                       'ag': mb_ag,
+                       'g': mb_g,
+                       'actions': mb_actions,
+                       'obs_next': mb_obs_next,
+                       'ag_next': mb_ag_next,
+                       }
+        transitions = self.her_module.sample_her_transitions(buffer_temp, num_transitions)
+        obs, g = transitions['obs'], transitions['ag']  # replace g by ag
+        # pre process the obs and g
+        transitions['obs'], transitions['g'] = self._clip(obs), self._clip(g)
+        # update
+        self.o_norm.update(transitions['obs'])
+        self.g_norm.update(transitions['g'])
+        # recompute the stats
+        self.o_norm.recompute_stats()
+        self.g_norm.recompute_stats()
 
     def act_gpi(self, obs, w_train, w_eval):
         # import pdb
@@ -220,10 +254,12 @@ class FBAgent:
         other_transitions = self.buffer.sample(self.args.batch_size)
         # pre-process the observation and goal
         o, o_next, g, ag = transitions['obs'], transitions['obs_next'], transitions['g'], transitions['ag']
-        transitions['obs'], transitions['g'] = self._clip(o), self._clip(g)
-        transitions['obs_next'] = self._clip(o_next)
-        transitions['ag'] = self._clip(ag)
-        other_transitions['ag'] = self._clip(other_transitions['ag'])
+        transitions['obs'], transitions['g'] = self.o_norm.normalize(o)\
+            , self.g_norm.normalize(g)
+        transitions['obs_next'] = self.o_norm.normalize(o_next)
+        transitions['ag'] = self.g_norm.normalize(ag)
+        other_transitions['ag'] = self.g_norm.normalize(other_transitions['ag'])
+        # other_ag = transitions['g']
 
         # transfer them into the tensor
         obs_tensor = torch.tensor(transitions['obs'], dtype=torch.float32)
@@ -231,6 +267,7 @@ class FBAgent:
         obs_next_tensor = torch.tensor(transitions['obs_next'], dtype=torch.float32)
         actions_tensor = torch.tensor(transitions['actions'], dtype=torch.long)
         ag_tensor = torch.tensor(transitions['ag'], dtype=torch.float32)
+        # ag_other_tensor = torch.tensor(other_ag, dtype=torch.float32)
         ag_other_tensor = torch.tensor(other_transitions['ag'], dtype=torch.float32)
         if self.args.cuda:
             obs_tensor = obs_tensor.cuda()
