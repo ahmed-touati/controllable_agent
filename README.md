@@ -1,3 +1,9 @@
+# Learning One Representation to Optimize All Rewards
+This repo contains code for the paper 
+
+[Learning One Representation to Optimize All Rewards.
+Ahmed Touati, Yann Ollivier. NeurIPS 2021](https://arxiv.org/pdf/2103.07945.pdf)
+
 ## Install Requirements
 
 ```bash
