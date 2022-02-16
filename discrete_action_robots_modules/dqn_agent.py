@@ -5,7 +5,7 @@ import numpy as np
 import random
 from discrete_action_robots_modules.replay_buffer import replay_buffer
 from discrete_action_robots_modules.models import critic
-from mpi_utils.normalizer import normalizer
+from discrete_action_robots_modules.normalizer import normalizer
 from her_modules.her import her_sampler
 from discrete_action_robots_modules.robots import goal_distance
 import csv
